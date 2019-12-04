@@ -15,7 +15,7 @@ YWorker::YWorker(int capacity)
     connect(this, SIGNAL(signal_releaseWorker()), this, SLOT(slot_releaseWorker()), Qt::QueuedConnection);
 }
 
-void YWorker::createWorker()
+void YWorker::createAsync()
 {
     emit signal_createWorker();
 }
@@ -40,28 +40,31 @@ void YWorker::removeJob()
     m_usage--;
 }
 
-void YWorker::releaseWorker()
+void YWorker::releaseAsync()
 {
     emit signal_releaseWorker();
 }
 
 void YWorker::slot_createWorker()
 {
-    createWorker();
+    createAsync();
     emit signal_workerCreated(this);
 }
 
 void YWorker::slot_releaseWorker()
 {
-    releaseWorker();
+    releaseAsync();
 }
 
-YLaborContractor::YLaborContractor(int worker_count)
+YLaborContractor::YLaborContractor(int worker_count, QObject *parent) : QObject(parent)
 {
+    m_initialized = false;
     m_worker_count = worker_count;
+    m_worker_created = 0;
+    m_name = "LaborContractor";
 }
 
-bool YLaborContractor::requireWorkerForJob(int job_id)
+bool YLaborContractor::registerJob(int job_id)
 {
     if (mmap_job_info.contains(job_id)) {
         YLOG(Module_Utils, WARNING) << "The job " << job_id << " has been scheduled worker!";
@@ -69,7 +72,7 @@ bool YLaborContractor::requireWorkerForJob(int job_id)
     }
 
     bool dispatched = false;
-    for (auto t : ml_worker)
+    for (auto t : mmap_worker.keys())
     {
         if (t->isAvailable()) {
             t->dispatchJob();
@@ -89,7 +92,7 @@ bool YLaborContractor::requireWorkerForJob(int job_id)
     return true;
 }
 
-bool YLaborContractor::releaseWorkerForJob(int job_id)
+bool YLaborContractor::unregisterJob(int job_id)
 {
     if (!mmap_job_info.contains(job_id)) {
         YLOG(Module_Utils, WARNING) << "The job " << job_id << " has not been scheduled worker!";
@@ -97,7 +100,7 @@ bool YLaborContractor::releaseWorkerForJob(int job_id)
     }
 
     bool removed = false;
-    for (auto t : ml_worker)
+    for (auto t : mmap_worker.keys())
     {
         if (t->isScheduled()) {
             t->removeJob();
@@ -112,4 +115,50 @@ bool YLaborContractor::releaseWorkerForJob(int job_id)
 
     mmap_job_info.remove(job_id);
     return true;
+}
+
+
+void YLaborContractor::init()
+{
+    for (int i = 0; i < m_worker_count; i++) {
+
+        QString worker_name(m_name);
+        worker_name.append(QString::number(i));
+
+        QThread *thread = new QThread();
+        thread->setObjectName(worker_name);
+        thread->start();
+
+        YWorker *worker = createWorker();
+        worker->moveToThread(thread);
+        worker->createAsync();
+
+        mmap_worker.insert(worker, thread);
+    }
+}
+
+void YLaborContractor::release()
+{
+    while (mmap_worker.size()) {
+        auto worker = mmap_worker.firstKey();
+        auto thread = mmap_worker.take(worker);
+        worker->releaseAsync();
+        thread->quit();
+        thread->wait();
+        delete thread;
+        delete worker;
+    }
+}
+
+void YLaborContractor::slot_workerCreated(YWorker* worker)
+{
+    auto thread = mmap_worker.value(worker);
+    mmap_free_worker.insert(worker, thread);
+
+    m_worker_created++;
+    if (m_worker_created == m_worker_count)
+    {
+        m_initialized = true;
+        emit signal_ready(this);
+    }
 }

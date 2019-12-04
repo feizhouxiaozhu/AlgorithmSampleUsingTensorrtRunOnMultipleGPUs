@@ -44,12 +44,12 @@ public:
     explicit YWorker(int capacity);
     virtual ~YWorker() {}
 
-    void createWorker();
+    void createAsync();
     bool isScheduled();
     bool isAvailable();
     void dispatchJob();
     void removeJob();
-    void releaseWorker();
+    void releaseAsync();
 
 protected:
     virtual void create() = 0;
@@ -74,24 +74,43 @@ private:
  * The implemention of YLaborContractor here only supplies asynchronized interfaces using Qt signals, it is the
  * caller's responsibility to listen these signals emitted on task done.
  */
-class YLaborContractor
+class YLaborContractor : public QObject
 {
+    Q_OBJECT
 public:
-    explicit YLaborContractor(int worker_count);
+    explicit YLaborContractor(int worker_count, QObject *parent = nullptr);
     virtual ~YLaborContractor() {}
+
+    bool isReady() { return m_initialized; }
 
     /* Here implements a simple rule with assumption that tasks in all jobs can be excuted by any worker.
      * The subclass should override this function for other rules complied with tasks with same job_id and workers.
      */
-    virtual bool requireWorkerForJob(int job_id);
-    virtual bool releaseWorkerForJob(int job_id);
+    virtual bool registerJob(int job_id);
+    virtual bool unregisterJob(int job_id);
 
 protected:
+    /* create and release back ground workers */
+    void init();
+    void release();
+
+    virtual YWorker* createWorker() = 0;
+
+signals:
+    void signal_ready(YLaborContractor*);
+
+protected slots:
+    /* background worker has been created */
+    void slot_workerCreated(YWorker* worker);
+
+protected:
+    QString m_name;
+    bool m_initialized;
     int m_worker_count;
-    QList<YWorker*> ml_worker;
+    int m_worker_created;
+    QMap<YWorker*, QThread*> mmap_worker;
     QMap<YWorker*, QThread*> mmap_free_worker;
     QMap<YWorker*, QThread*> mmap_busy_worker;
-
     QMap<int, YJobStatisticInfo> mmap_job_info;
 };
 
