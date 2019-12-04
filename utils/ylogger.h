@@ -11,7 +11,8 @@
 #include <iostream>
 
 typedef enum enYLoggerModule {
-    Module_Utils      = 0x00000001,
+    Module_Test       = 0x00000001,
+    Module_Utils      = 0x00000002,
     Module_Max
 } YLoggerModule;
 

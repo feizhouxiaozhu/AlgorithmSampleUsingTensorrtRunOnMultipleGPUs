@@ -8,11 +8,14 @@
 #ifndef YALGORITHM_H
 #define YALGORITHM_H
 
+#include "utils/ylaborcontractor.h"
 
-class YAlgorithm
+class YAlgorithmLaborContractor : public YLaborContractor
 {
 public:
-    YAlgorithm();
+    YAlgorithmLaborContractor(int worker_count, QObject *parent);
+    virtual ~YAlgorithmLaborContractor() {}
+
 };
 
 #endif // YALGORITHM_H

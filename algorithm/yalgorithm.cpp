@@ -6,7 +6,8 @@
 
 #include "yalgorithm.h"
 
-YAlgorithm::YAlgorithm()
+YAlgorithmLaborContractor::YAlgorithmLaborContractor(int worker_count, QObject *parent)
+    : YLaborContractor(worker_count, parent)
 {
 
 }
