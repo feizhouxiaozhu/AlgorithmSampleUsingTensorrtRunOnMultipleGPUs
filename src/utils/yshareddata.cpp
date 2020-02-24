@@ -9,7 +9,6 @@
 YSharedData::YSharedData(QObject *parent) : QObject(parent)
 {
     m_mutex = new QMutex();
-    m_cur_flag = 0;
     m_ref_count = 0;
 }
 

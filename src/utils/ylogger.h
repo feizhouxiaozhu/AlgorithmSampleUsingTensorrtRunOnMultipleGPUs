@@ -17,7 +17,8 @@
 
 typedef enum enYLoggerModule {
     Module_Test       = 0x00000001,
-    Module_Utils      = 0x00000002
+    Module_Utils      = 0x00000002,
+    Module_Videoio    = 0x00000004
 } YLoggerModule;
 
 typedef enum enYLoggerSeverity {

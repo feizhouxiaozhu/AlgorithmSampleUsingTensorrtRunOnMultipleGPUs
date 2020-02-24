@@ -14,7 +14,7 @@
 
 YImage::YImage(YDataType data_type, int device)
 {
-    m_device    = device;
+    m_device_id    = device;
     m_data_type = data_type;
     setDefault();
 }
@@ -24,36 +24,13 @@ YImage::~YImage()
     release();
 }
 
-int YImage::getBytesPerPixel(int format) {
-    int bpp = 0;
-    switch (format) {
-        case YPixelFormat_BGR:
-        case YPixelFormat_RGB:
-            bpp = 3;
-        break;
-        case YPixelFormat_BGRA:
-        case YPixelFormat_RGBA:
-            bpp = 4;
-        break;
-        case YPixelFormat_YUV420P:
-        case YPixelFormat_YUV422P:
-        case YPixelFormat_YUV444P:
-            bpp = 1;
-        break;
-    default:
-        YLOG(Module_Utils, WARNING) << "Unknown pixel format-->" << m_format << "!";
-    }
-
-    return bpp;
-}
-
 bool YImage::resize(int w, int h, YPixelFormat format)
 {
-    if (getPlaneCount(m_format) != getPlaneCount(format)
-        || m_linesize < w * getBytesPerPixel(format)) {
+    if (getDataWidth(m_width, m_format) < getDataWidth(w, format)
+        || getDataHeight(m_height, m_format) < getDataHeight(h, format)) {
 
         release();
-        if (allocData(w, h, format)) {
+        if (!allocData(w, h, format)) {
             return false;
         }
     }
@@ -68,91 +45,67 @@ bool YImage::resize(int w, int h, YPixelFormat format)
 bool YImage::copy(YImage *src)
 {
     bool ret = false;
-    ret = resize(src->getWidth(), src->getHeight(), src->getFormat());
+    ret = resize(src->getPixelWidth(), src->getPixelHeight(), src->getPixelFormat());
     if (!ret) {
         return false;
     }
 
-    int height = getTotalHeight(m_height, m_format);
-#ifdef EnablePitch
+    cudaMemcpyKind kind = cudaMemcpyDefault;
     if (YDataType_Device == m_data_type) {
-        if (YDataType_Device == src->m_data) {
-            cudaMemcpy2D(m_data, m_linesize, src->getData(), src->getLinesize(),
-                         m_width * getBytesPerPixel(m_format), height, cudaMemcpyDeviceToDevice);
+        if (YDataType_Device == src->m_data_type) {
+            kind = cudaMemcpyDeviceToDevice;
         } else {
-            cudaMemcpy2D(m_data, m_linesize, src->getData(), src->getLinesize(),
-                         m_width * getBytesPerPixel(m_format), height, cudaMemcpyHostToDevice);
+            kind = cudaMemcpyHostToDevice;
         }
     } else {
-        if (YDataType_Device == src->m_data) {
-            cudaMemcpy2D(m_data, m_linesize, src->getData(), src->getLinesize(),
-                         m_width * getBytesPerPixel(m_format), height, cudaMemcpyDeviceToHost);
+        if (YDataType_Device == src->m_data_type) {
+            kind = cudaMemcpyDeviceToHost;
         } else {
-            cudaMemcpy2D(m_data, m_linesize, src->getData(), src->getLinesize(),
-                         m_width * getBytesPerPixel(m_format), height, cudaMemcpyHostToHost);
+            kind = cudaMemcpyHostToHost;
         }
     }
-#else
-    if (YDataType_Device == m_data_type) {
-        if (YDataType_Device == src->getDataType()) {
-            cudaMemcpy(m_data, src->getData(), height * m_linesize, cudaMemcpyDeviceToDevice);
-        } else {
-            cudaMemcpy(m_data, src->getData(), height * m_linesize, cudaMemcpyHostToDevice);
-        }
-    } else {
-        if (YDataType_Device == src->getDataType()) {
-            cudaMemcpy(m_data, src->getData(), height * m_linesize, cudaMemcpyDeviceToHost);
-        } else {
-            cudaMemcpy(m_data, src->getData(), height * m_linesize, cudaMemcpyHostToHost);
-        }
-    }
-#endif
-
-    cudaError_t err = cudaGetLastError();
-    if (cudaSuccess != err) {
-        YLOG(Module_Utils, ERROR) << "Failed to excute cuda functions!";
-        return false;
-    }
+    cudaMemcpy2D(m_data, m_linesize, src->getData(), src->getLinesize(),
+                 getDataWidth(m_width, m_format), getDataHeight(m_height, m_format), kind);
 
     return  true;
 }
 
-int YImage::getALignment()
+void YImage::copyFromHost(void* data, int linesize)
 {
-    int align = 8;
+    cudaMemcpyKind kind = cudaMemcpyDefault;
     if (YDataType_Device == m_data_type) {
-        /* TODO: study texture alignment usage on cuda device and determine alignment on cuda device
-         * Now just align to 8 default as host
-         */
-        align = 8;
+        kind = cudaMemcpyHostToDevice;
+    } else {
+        kind = cudaMemcpyHostToHost;
     }
-
-    return align;
+    cudaMemcpy2D(m_data, m_linesize, data, linesize, getDataWidth(m_width, m_format), getDataHeight(m_height, m_format), kind);
 }
 
-int YImage::getPlaneCount(int format)
+long unsigned int YImage::getDataWidth(int w, YPixelFormat format)
 {
-    int planes = 0;
+    int width = 0;
     switch (format) {
         case YPixelFormat_BGR:
         case YPixelFormat_RGB:
+            width = w * 3;
+        break;
         case YPixelFormat_BGRA:
         case YPixelFormat_RGBA:
-            planes = 1;
+            width = w * 4;
         break;
         case YPixelFormat_YUV420P:
         case YPixelFormat_YUV422P:
         case YPixelFormat_YUV444P:
-            planes = 3;
+            width = w;
         break;
     default:
-        YLOG(Module_Utils, WARNING) << "Unknown pixel format-->" << m_format << "!";
+        YLOG(Module_Utils, Severity_WARNING) << "Unknown pixel format-->" << format << "!";
     }
 
-    return planes;
+    return width;
 }
 
-int YImage::getTotalHeight(int h, int format)
+unsigned long YImage::getDataHeight(int h, YPixelFormat format)
 {
     int height = 0;
     switch (format) {
@@ -161,18 +114,18 @@ int YImage::getTotalHeight(int h, int format)
         case YPixelFormat_BGRA:
         case YPixelFormat_RGBA:
             height = h;
-        break;
+            break;
         case YPixelFormat_YUV420P:
             height = h + (h + 1) / 2;
-        break;
+            break;
         case YPixelFormat_YUV422P:
             height = h * 2;
-        break;
+            break;
         case YPixelFormat_YUV444P:
             height = h * 3;
-        break;
+            break;
     default:
-        YLOG(Module_Utils, WARNING) << "Unknown pixel format-->" << m_format << "!";
+        YLOG(Module_Utils, Severity_ERROR) << "Unknown pixel format-->" << format << "!";
     }
 
     return height;
@@ -182,26 +135,26 @@ void YImage::setDefault()
 {
     m_width    = 0;
     m_height   = 0;
-    m_format   = YPixelFormat_None;
+    m_format   = YPixelFormat_BGR;
     m_linesize = 0;
     m_data     = nullptr;
-    m_align    = getALignment();
 }
 
-bool YImage::allocData(int w, int h, int format)
+bool YImage::allocData(int w, int h, YPixelFormat format)
 {
-    m_linesize = (w * getBytesPerPixel(format) + m_align - 1) / m_align * m_align;
-    int size = m_linesize * getTotalHeight(h, format);
+    int align = 8;  /* due to address of x64 system */
+    m_linesize = (getDataWidth(w, format) + align - 1) / align * align;
+    int size = m_linesize * getDataHeight(h, format);
     if (YDataType_Host == m_data_type) {
         m_data = malloc(size);
     } else if(YDataType_HostPaged == m_data_type) {
         cudaHostAlloc(&m_data, size, cudaHostAllocPortable);
     } else {
-        cudaMalloc(&m_data, size);
+        cudaMallocPitch(&m_data, &m_linesize, getDataWidth(w, format), getDataHeight(h, format));
     }
 
     if (nullptr == m_data) {
-        YLOG(Module_Utils, ERROR) << "Insufficient memory to alloc " << size << " data!";
+        YLOG(Module_Utils, Severity_ERROR) << "Insufficient memory to alloc " << size << " data!";
         return false;
     }
 

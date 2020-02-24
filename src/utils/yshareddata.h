@@ -11,11 +11,11 @@
 #include <QMutex>
 #include <QObject>
 
-class YSharedData : public QObject
+class YSharedData : protected QObject
 {
     Q_OBJECT
 public:
-    explicit YSharedData(QObject *parent = 0);
+    explicit YSharedData(QObject *parent = nullptr);
     virtual ~YSharedData();
 
     /* use reference count to share data */
@@ -28,6 +28,7 @@ public:
     void removeUser(int user);
     bool hasUser();
 
+    /* check reference and user all */
     bool isInUse();
 
     void lock();

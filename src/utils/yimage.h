@@ -9,7 +9,7 @@
 
 typedef enum enYDataType {
     YDataType_Host,
-//    YDataType_HostPaged,
+    YDataType_HostPaged,
     YDataType_Device
 } YDataType;
 
@@ -27,39 +27,35 @@ class YImage
 {
 public:
     explicit YImage(YDataType data_type = YDataType_Host, int device = 0);
-    ~YImage();
+    virtual ~YImage();
 
     bool resize(int w, int h, YPixelFormat format);
     bool copy(YImage* src);
+    void copyFromHost(void* data, int linesize);
 
-    inline int getPixelWidth() { return m_width; }
-    inline int getPixelHeight() { return m_width; }
+    inline long getPixelWidth() { return m_width; }
+    inline long getPixelHeight() { return m_width; }
+    static long unsigned int getDataWidth(int w, YPixelFormat format);
+    static long unsigned int getDataHeight(int h, YPixelFormat format);
     inline YPixelFormat getPixelFormat() { return m_format; }
-    inline int getLinesize() { return m_linesize; }
+    inline long getLinesize() { return m_linesize; }
     inline void* getData() { return m_data; }
-    inline int getDevice() { return m_device; }
+    inline int getDeviceId() { return m_device_id; }
     inline YDataType getDataType() { return m_data_type; }
 
 protected:
-    int m_width;
-    int m_height;
+    long m_width;
+    long m_height;
     YPixelFormat m_format;
-    int m_linesize;
+    unsigned long m_linesize;
     void* m_data;
-    int m_device;
+    int m_device_id;
 
     YDataType m_data_type;
 
-    int m_align;
-    int getALignment();
-    int getPlaneCount(int format);
-    int getTotalHeight(int h, int format);
-    /* get bytes per pixel on one plane */
-    int getBytesPerPixel(int format);
-
     void setDefault();
 
-    bool allocData(int w, int h, int format);
+    bool allocData(int w, int h, YPixelFormat format);
     void release();
 
 private:
